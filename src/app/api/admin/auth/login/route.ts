@@ -61,15 +61,27 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Login error:", error);
 
-    // If the error is about missing tables, hint the caller
+    // Any database error (missing tables, no DB file, etc.) → tell caller to run setup
     const msg = (error as Error).message || "";
-    if (
-      msg.includes("no such table") ||
-      msg.includes("sqlite3") ||
-      msg.includes("SQLITE_CANTOPEN")
-    ) {
+    const stack = (error as Error).stack || "";
+    const combined = msg + " " + stack;
+
+    const isDbError =
+      combined.includes("no such table") ||
+      combined.includes("sqlite3") ||
+      combined.includes("SQLITE_CANTOPEN") ||
+      combined.includes("SQLITE_ERROR") ||
+      combined.includes("Failed to open database") ||
+      combined.includes("database is locked") ||
+      combined.includes("Prisma") ||
+      combined.includes("prisma") ||
+      combined.includes("Cannot find module") ||
+      combined.includes("ENOTDIR") ||
+      combined.includes("ENOENT");
+
+    if (isDbError) {
       return NextResponse.json(
-        { error: "Database not initialized. Run setup first." },
+        { error: "Database not initialized. Please click Initialize & Login below." },
         { status: 503 }
       );
     }

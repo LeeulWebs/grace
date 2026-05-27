@@ -47,10 +47,10 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
           description: "Successfully logged in.",
         });
         onLogin(data.token);
-      } else if (res.status === 503 || (res.status === 500 && data.error?.includes("not initialized"))) {
-        // Database not initialized - show setup option
+      } else if (res.status === 503 || res.status === 500) {
+        // Database not initialized or server error - show setup option
         setSetupMode(true);
-        setSetupMessage(data.error || "The database has not been initialized yet.");
+        setSetupMessage(data.error || "The database may not be initialized yet. Click below to set it up.");
       } else {
         toast({
           title: "Login Failed",
