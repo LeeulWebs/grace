@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, ensureDatabase } from "@/lib/db";
 import { hashPassword, generateToken } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
   try {
+    // Ensure DB is ready (creates tables + admin user if needed — uses raw SQL, no CLI)
+    const ready = await ensureDatabase(db);
+    if (!ready) {
+      return NextResponse.json(
+        { error: "DATABASE_NOT_READY", setupRequired: true },
+        { status: 503 }
+      );
+    }
+
     const body = await request.json();
     const { username, password } = body;
 
     if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username and password are required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Username and password required." }, { status: 400 });
     }
 
     const hashedPassword = hashPassword(password);
@@ -20,11 +26,7 @@ export async function POST(request: NextRequest) {
       where: { username: username.trim() },
     });
 
-    if (!user) {
-      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-    }
-
-    if (user.password !== hashedPassword) {
+    if (!user || user.password !== hashedPassword) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
@@ -42,36 +44,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-      },
+      user: { id: user.id, username: user.username, fullName: user.fullName, role: user.role },
     });
   } catch (error) {
     console.error("[login] Error:", error);
-
-    // Catch any DB issue and tell the frontend to run setup
-    const msg = ((error as Error).message || "") + " " + ((error as Error).stack || "");
-    const isDbError =
-      msg.includes("no such table") ||
-      msg.includes("SQLITE") ||
-      msg.includes("Prisma") ||
-      msg.includes("prisma") ||
-      msg.includes("ENOENT") ||
-      msg.includes("Cannot find");
-
-    if (isDbError) {
-      return NextResponse.json(
-        { error: "DATABASE_NOT_READY", setupRequired: true },
-        { status: 503 }
-      );
-    }
-
     return NextResponse.json(
-      { error: "Something went wrong. Please try again later." },
-      { status: 500 }
+      { error: "DATABASE_NOT_READY", setupRequired: true },
+      { status: 503 }
     );
   }
 }

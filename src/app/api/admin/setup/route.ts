@@ -1,58 +1,23 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
-import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
-import crypto from "crypto";
+import { db, ensureDatabase } from "@/lib/db";
 
+/**
+ * POST /api/admin/setup
+ * Initializes the database using raw SQL (no Prisma CLI needed).
+ * Seeds admin user, site settings, and service categories.
+ */
 export async function POST() {
   try {
-    // 1. Ensure db directory
-    const dbDir = join(process.cwd(), "db");
-    if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
-
-    // 2. Push schema
-    console.log("[setup] Pushing schema...");
-    let pushed = false;
-    for (const cmd of [
-      "npx prisma db push --skip-generate 2>&1",
-      "bunx prisma db push --skip-generate 2>&1",
-    ]) {
-      try {
-        execSync(cmd, { cwd: process.cwd(), stdio: "pipe", timeout: 60000 });
-        pushed = true;
-        break;
-      } catch {
-        console.log(`[setup] ${cmd.split(" ")[0]} failed, trying next...`);
-      }
+    // Step 1: Create tables + admin user via raw SQL
+    const ready = await ensureDatabase(db);
+    if (!ready) {
+      return NextResponse.json({ error: "Failed to create database tables." }, { status: 500 });
     }
 
-    if (!pushed) {
-      return NextResponse.json({ error: "Could not create database tables." }, { status: 500 });
-    }
-
-    // 3. Seed admin user
-    const { PrismaClient } = await import("@prisma/client");
-    const prisma = new PrismaClient({ log: [] });
-
+    // Step 2: Seed site settings if empty
     try {
-      const count = await prisma.adminUser.count();
-      if (count === 0) {
-        const hash = crypto.createHash("sha256").update("user").digest("hex");
-        await prisma.adminUser.create({
-          data: {
-            username: "user",
-            password: hash,
-            fullName: "Super Admin",
-            role: "superadmin",
-            isActive: true,
-          },
-        });
-        console.log("[setup] Admin user created.");
-      }
-
-      // Seed settings if empty
-      if ((await prisma.siteSetting.count()) === 0) {
-        await prisma.siteSetting.createMany({
+      if ((await db.siteSetting.count()) === 0) {
+        await db.siteSetting.createMany({
           data: [
             { key: "hero_badge", value: "Uganda's Trusted Construction Partner" },
             { key: "hero_title", value: "Building Uganda's Future with Excellence" },
@@ -73,11 +38,16 @@ export async function POST() {
             { key: "stat_divisions", value: "5" },
           ],
         });
+        console.log("[setup] Site settings seeded.");
       }
+    } catch (e) {
+      console.error("[setup] Settings seed error:", e);
+    }
 
-      // Seed services if empty
-      if ((await prisma.serviceCategory.count()) === 0) {
-        await prisma.serviceCategory.createMany({
+    // Step 3: Seed service categories if empty
+    try {
+      if ((await db.serviceCategory.count()) === 0) {
+        await db.serviceCategory.createMany({
           data: [
             { name: "Construction", icon: "Building2", color: "bg-brand-500", lightColor: "bg-brand-50 text-brand-700", borderColor: "border-brand-200", services: '["Building and facility maintenance","Civil engineering","Nonresidential building construction"]', sortOrder: 0 },
             { name: "Infrastructure", icon: "TrainTrack", color: "bg-emerald-700", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Construction of roads and bridges","Road construction materials","Civil engineering"]', sortOrder: 1 },
@@ -86,17 +56,15 @@ export async function POST() {
             { name: "Supply & Procurement", icon: "Truck", color: "bg-emerald-600", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Chemicals and chemical products","Computer Equipment"]', sortOrder: 4 },
           ],
         });
+        console.log("[setup] Service categories seeded.");
       }
-    } finally {
-      await prisma.$disconnect();
+    } catch (e) {
+      console.error("[setup] Services seed error:", e);
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "Database ready." });
   } catch (error) {
     console.error("[setup] Error:", error);
-    return NextResponse.json(
-      { error: "Setup failed. Run: bun install && bunx prisma db push && bun run prisma/seed.ts" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Setup failed." }, { status: 500 });
   }
 }
