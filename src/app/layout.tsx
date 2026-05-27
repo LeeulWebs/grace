@@ -14,24 +14,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: "Grace Holdings | Building Uganda's Future",
+  description: "Grace Holdings is Uganda's premier construction, engineering, and procurement company. Specializing in civil engineering, building construction, road & bridge construction, engineering consultancy, and comprehensive supply services.",
+  keywords: ["Grace Holdings", "Uganda", "Kampala", "construction", "civil engineering", "building", "roads", "bridges", "procurement", "solar energy", "water treatment"],
+  authors: [{ name: "Grace Holdings" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.jpg",
   },
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "Grace Holdings | Building Uganda's Future",
+    description: "Premier construction, engineering, and procurement company in Uganda.",
+    siteName: "Grace Holdings",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    title: "Grace Holdings | Building Uganda's Future",
+    description: "Premier construction, engineering, and procurement company in Uganda.",
   },
 };
 
