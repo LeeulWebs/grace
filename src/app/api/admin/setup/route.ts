@@ -1,43 +1,36 @@
 import { NextResponse } from "next/server";
 import { execSync } from "child_process";
+import { existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import crypto from "crypto";
 
-/**
- * POST /api/admin/setup
- * Initializes the database (pushes schema + seeds admin user).
- * Called automatically by the login page when it detects an uninit'd DB.
- */
 export async function POST() {
   try {
-    // 1. Push schema — try npx first, fallback to bunx
-    console.log("[setup] Pushing Prisma schema...");
-    let schemaOk = false;
+    // 1. Ensure db directory
+    const dbDir = join(process.cwd(), "db");
+    if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
+
+    // 2. Push schema
+    console.log("[setup] Pushing schema...");
+    let pushed = false;
     for (const cmd of [
       "npx prisma db push --skip-generate 2>&1",
       "bunx prisma db push --skip-generate 2>&1",
     ]) {
       try {
-        execSync(cmd, {
-          cwd: process.cwd(),
-          stdio: "pipe",
-          timeout: 60000,
-        });
-        schemaOk = true;
-        console.log("[setup] Schema pushed.");
+        execSync(cmd, { cwd: process.cwd(), stdio: "pipe", timeout: 60000 });
+        pushed = true;
         break;
       } catch {
         console.log(`[setup] ${cmd.split(" ")[0]} failed, trying next...`);
       }
     }
 
-    if (!schemaOk) {
-      return NextResponse.json(
-        { error: "Could not push schema. Run: bun run setup" },
-        { status: 500 }
-      );
+    if (!pushed) {
+      return NextResponse.json({ error: "Could not create database tables." }, { status: 500 });
     }
 
-    // 2. Seed admin user using dynamic import to get a fresh Prisma client
+    // 3. Seed admin user
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient({ log: [] });
 
@@ -49,17 +42,16 @@ export async function POST() {
           data: {
             username: "user",
             password: hash,
-            fullName: "Admin User",
-            role: "admin",
+            fullName: "Super Admin",
+            role: "superadmin",
             isActive: true,
           },
         });
         console.log("[setup] Admin user created.");
       }
 
-      // Also seed site settings and services if empty
-      const settingCount = await prisma.siteSetting.count();
-      if (settingCount === 0) {
+      // Seed settings if empty
+      if ((await prisma.siteSetting.count()) === 0) {
         await prisma.siteSetting.createMany({
           data: [
             { key: "hero_badge", value: "Uganda's Trusted Construction Partner" },
@@ -81,31 +73,29 @@ export async function POST() {
             { key: "stat_divisions", value: "5" },
           ],
         });
-        console.log("[setup] Site settings seeded.");
       }
 
-      const serviceCount = await prisma.serviceCategory.count();
-      if (serviceCount === 0) {
+      // Seed services if empty
+      if ((await prisma.serviceCategory.count()) === 0) {
         await prisma.serviceCategory.createMany({
           data: [
-            { name: "Construction", icon: "Building2", color: "bg-brand-500", lightColor: "bg-brand-50 text-brand-700", borderColor: "border-brand-200", services: '["Building and facility maintenance","Civil engineering","Nonresidential building construction","Permanent buildings and structures","Structural building products"]', sortOrder: 0 },
-            { name: "Infrastructure", icon: "TrainTrack", color: "bg-emerald-700", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Construction of roads and bridges","Road construction materials","Civil engineering","Construction and maintenance support equipment"]', sortOrder: 1 },
-            { name: "Engineering Consultancy", icon: "ClipboardCheck", color: "bg-slate-700", lightColor: "bg-slate-100 text-slate-700", borderColor: "border-slate-200", services: '["Architectural and engineering consultancy","Construction Management","Design and Construction Supervision"]', sortOrder: 2 },
-            { name: "Energy & Water", icon: "Zap", color: "bg-brand-600", lightColor: "bg-brand-50 text-brand-700", borderColor: "border-brand-200", services: '["Solar and Renewable energy","Water collection, treatment and disposal","Batteries and generators","Electrical equipment and supplies"]', sortOrder: 3 },
-            { name: "Supply & Procurement", icon: "Truck", color: "bg-emerald-600", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Chemicals and chemical products","Classroom and institutional furniture","Computer Equipment and Accessories","Educational and reading materials"]', sortOrder: 4 },
+            { name: "Construction", icon: "Building2", color: "bg-brand-500", lightColor: "bg-brand-50 text-brand-700", borderColor: "border-brand-200", services: '["Building and facility maintenance","Civil engineering","Nonresidential building construction"]', sortOrder: 0 },
+            { name: "Infrastructure", icon: "TrainTrack", color: "bg-emerald-700", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Construction of roads and bridges","Road construction materials","Civil engineering"]', sortOrder: 1 },
+            { name: "Engineering Consultancy", icon: "ClipboardCheck", color: "bg-slate-700", lightColor: "bg-slate-100 text-slate-700", borderColor: "border-slate-200", services: '["Architectural and engineering consultancy","Construction Management"]', sortOrder: 2 },
+            { name: "Energy & Water", icon: "Zap", color: "bg-brand-600", lightColor: "bg-brand-50 text-brand-700", borderColor: "border-brand-200", services: '["Solar and Renewable energy","Water collection and treatment"]', sortOrder: 3 },
+            { name: "Supply & Procurement", icon: "Truck", color: "bg-emerald-600", lightColor: "bg-emerald-50 text-emerald-700", borderColor: "border-emerald-200", services: '["Chemicals and chemical products","Computer Equipment"]', sortOrder: 4 },
           ],
         });
-        console.log("[setup] Service categories seeded.");
       }
     } finally {
       await prisma.$disconnect();
     }
 
-    return NextResponse.json({ success: true, message: "Database initialized." });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[setup] Error:", error);
     return NextResponse.json(
-      { error: "Setup failed. Run this in your terminal: bun run setup" },
+      { error: "Setup failed. Run: bun install && bunx prisma db push && bun run prisma/seed.ts" },
       { status: 500 }
     );
   }

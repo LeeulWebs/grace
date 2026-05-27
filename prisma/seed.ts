@@ -19,8 +19,8 @@ async function seed() {
       data: {
         username: "user",
         password: hash,
-        fullName: "Admin User",
-        role: "admin",
+        fullName: "Super Admin",
+        role: "superadmin",
         isActive: true,
       },
     });

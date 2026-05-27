@@ -21,24 +21,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
     if (user.password !== hashedPassword) {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
     if (!user.isActive) {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Account disabled" }, { status: 403 });
     }
 
     const token = generateToken();
@@ -59,29 +50,21 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("[login] Error:", error);
 
-    // Any database error (missing tables, no DB file, etc.) → tell caller to run setup
-    const msg = (error as Error).message || "";
-    const stack = (error as Error).stack || "";
-    const combined = msg + " " + stack;
-
+    // Catch any DB issue and tell the frontend to run setup
+    const msg = ((error as Error).message || "") + " " + ((error as Error).stack || "");
     const isDbError =
-      combined.includes("no such table") ||
-      combined.includes("sqlite3") ||
-      combined.includes("SQLITE_CANTOPEN") ||
-      combined.includes("SQLITE_ERROR") ||
-      combined.includes("Failed to open database") ||
-      combined.includes("database is locked") ||
-      combined.includes("Prisma") ||
-      combined.includes("prisma") ||
-      combined.includes("Cannot find module") ||
-      combined.includes("ENOTDIR") ||
-      combined.includes("ENOENT");
+      msg.includes("no such table") ||
+      msg.includes("SQLITE") ||
+      msg.includes("Prisma") ||
+      msg.includes("prisma") ||
+      msg.includes("ENOENT") ||
+      msg.includes("Cannot find");
 
     if (isDbError) {
       return NextResponse.json(
-        { error: "Database not initialized. Please click Initialize & Login below." },
+        { error: "DATABASE_NOT_READY", setupRequired: true },
         { status: 503 }
       );
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,112 +19,87 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
-  const [setupMessage, setSetupMessage] = useState("");
-  const [setupSuccess, setSetupSuccess] = useState(false);
-  const [settingUp, setSettingUp] = useState(false);
+  const [setupStep, setSetupStep] = useState<"idle" | "init" | "done" | "login">("idle");
+  const [setupError, setSetupError] = useState("");
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const tryLogin = async (user: string, pass: string) => {
+    const res = await fetch("/api/admin/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: user, password: pass }),
+    });
+    return { res, data: await res.json() };
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setSetupMode(false);
-    setSetupMessage("");
-    setSetupSuccess(false);
+    setSetupError("");
 
     try {
-      const res = await fetch("/api/admin/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await res.json();
+      const { res, data } = await tryLogin(username, password);
 
       if (res.ok && data.token) {
         localStorage.setItem("admin_token", data.token);
-        toast({
-          title: "Welcome back!",
-          description: "Successfully logged in.",
-        });
+        toast({ title: "Welcome back!", description: "Successfully logged in." });
         onLogin(data.token);
       } else if (res.status === 503 || res.status === 500) {
-        // Database not initialized or server error - show setup option
         setSetupMode(true);
-        setSetupMessage(data.error || "The database may not be initialized yet. Click below to set it up.");
+        setSetupStep("idle");
       } else {
         toast({
           title: "Login Failed",
-          description: data.error || "Invalid credentials. Please try again.",
+          description: data.error || "Invalid credentials.",
           variant: "destructive",
         });
       }
     } catch {
-      toast({
-        title: "Connection Error",
-        description: "Could not connect to the server. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Could not reach the server.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSetup = async () => {
-    setSettingUp(true);
-    setSetupMessage("Initializing database...");
-    setSetupSuccess(false);
+  const handleSetupAndLogin = async () => {
+    setSetupStep("init");
+    setSetupError("");
 
+    // Step 1: Initialize database
     try {
-      const res = await fetch("/api/admin/setup", {
-        method: "POST",
-      });
+      const setupRes = await fetch("/api/admin/setup", { method: "POST" });
+      const setupData = await setupRes.json();
 
-      const data = await res.json();
+      if (!setupRes.ok) {
+        setSetupError(setupData.error || "Database setup failed.");
+        setSetupStep("idle");
+        return;
+      }
 
-      if (res.ok && data.success) {
-        setSetupSuccess(true);
-        setSetupMessage("Database initialized! You can now log in.");
+      setSetupStep("done");
 
-        // Auto-login after successful setup
-        try {
-          const loginRes = await fetch("/api/admin/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: "user", password: "user" }),
-          });
+      // Step 2: Auto-login
+      setSetupStep("login");
+      const { res, data } = await tryLogin("user", "user");
 
-          const loginData = await loginRes.json();
-          if (loginRes.ok && loginData.token) {
-            localStorage.setItem("admin_token", loginData.token);
-            toast({
-              title: "Setup Complete!",
-              description: "Database initialized and logged in.",
-            });
-            setSetupMode(false);
-            onLogin(loginData.token);
-            return;
-          }
-        } catch {
-          // Login after setup failed, but setup succeeded - user can try manually
-        }
-
-        toast({
-          title: "Setup Complete",
-          description: "Database initialized. Please log in with username 'user' and password 'user'.",
-        });
+      if (res.ok && data.token) {
+        localStorage.setItem("admin_token", data.token);
+        toast({ title: "Setup Complete!", description: "Database initialized and logged in." });
+        setSetupMode(false);
+        onLogin(data.token);
       } else {
-        setSetupMessage(data.error || "Setup failed. Please run 'bun run setup' in the terminal.");
+        setSetupError("Database ready. Please log in with username 'user' and password 'user'.");
+        setSetupStep("done");
       }
     } catch {
-      setSetupMessage("Connection error. Make sure the server is running.");
-    } finally {
-      setSettingUp(false);
+      setSetupError("Connection error. Is the server running?");
+      setSetupStep("idle");
     }
   };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-brand-950 p-4">
-      {/* Subtle background pattern */}
       <div className="absolute inset-0 opacity-5">
         <div
           className="h-full w-full"
@@ -154,25 +129,74 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 priority
               />
               <div className="flex flex-col leading-none">
-                <span className="text-2xl font-bold tracking-tight text-slate-900">
-                  Grace
-                </span>
-                <span className="text-sm font-medium tracking-widest text-brand-500">
-                  HOLDINGS
-                </span>
+                <span className="text-2xl font-bold tracking-tight text-slate-900">Grace</span>
+                <span className="text-sm font-medium tracking-widest text-brand-500">HOLDINGS</span>
               </div>
             </div>
             <div className="mt-2 text-center">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Admin Panel
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Sign in to manage your website
-              </p>
+              <h2 className="text-lg font-semibold text-slate-900">Admin Panel</h2>
+              <p className="mt-1 text-sm text-slate-500">Sign in to manage your website</p>
             </div>
           </CardHeader>
+
           <CardContent className="px-8 pb-8 pt-4">
-            <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Setup banner */}
+            <AnimatePresence>
+              {setupMode && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-5 overflow-hidden"
+                >
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                      {setupStep === "done" ? (
+                        <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-500" />
+                      ) : (
+                        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                      )}
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-amber-800">
+                          {setupStep === "done"
+                            ? "Database Ready"
+                            : "Database Not Initialized"}
+                        </p>
+                        {setupStep === "init" && (
+                          <p className="mt-1 flex items-center gap-2 text-xs text-amber-600">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Creating database and setting up admin account...
+                          </p>
+                        )}
+                        {setupStep === "login" && (
+                          <p className="mt-1 flex items-center gap-2 text-xs text-amber-600">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Logging you in...
+                          </p>
+                        )}
+                        {setupError && (
+                          <p className="mt-1 text-xs text-red-600">{setupError}</p>
+                        )}
+                        {setupStep === "idle" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-3 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                            onClick={handleSetupAndLogin}
+                          >
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                            Initialize & Login
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-sm font-medium text-slate-700">
                   Username
@@ -209,48 +233,6 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 </div>
               </div>
 
-              {/* Setup message */}
-              {setupMode && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="rounded-lg border border-amber-200 bg-amber-50 p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    {setupSuccess ? (
-                      <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-500" />
-                    ) : (
-                      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
-                    )}
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-amber-800">
-                        {setupSuccess ? "Setup Successful" : "Database Not Ready"}
-                      </p>
-                      <p className="mt-1 text-xs text-amber-600">
-                        {setupMessage || "Click below to auto-initialize the database and login."}
-                      </p>
-                      {!setupSuccess && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="mt-3 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
-                          onClick={handleSetup}
-                          disabled={settingUp}
-                        >
-                          {settingUp ? (
-                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                          )}
-                          Initialize & Login
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
               <Button
                 type="submit"
                 disabled={loading}
@@ -266,6 +248,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 )}
               </Button>
             </form>
+
             <div className="mt-6 border-t border-slate-100 pt-4 text-center">
               <p className="text-xs text-slate-400">
                 Grace Holdings &mdash; Admin Management System
