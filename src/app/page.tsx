@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
+import { AdminPanel } from "@/components/admin/admin-panel";
 
 /* ──────────────────────────── DATA ──────────────────────────── */
 
@@ -319,7 +320,7 @@ function Logo({ scrolled = false, size = "default" }: { scrolled?: boolean; size
 
 /* ───────────────────────── MAIN PAGE ────────────────────────── */
 
-export default function GraceHoldingsPage() {
+function GraceHoldingsWebsite() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeTab, setActiveTab] = useState("construction");
@@ -1044,9 +1045,23 @@ export default function GraceHoldingsPage() {
               &copy; {new Date().getFullYear()} Grace Holdings. All rights
               reserved.
             </p>
-            <p className="text-xs text-slate-500">
-              Kampala, Uganda &mdash; Building Excellence
-            </p>
+            <div className="flex items-center gap-4">
+              <a
+                href="#admin"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.location.hash = "#admin";
+                  window.location.reload();
+                }}
+                className="text-xs text-slate-600 transition-colors hover:text-slate-400"
+              >
+                Admin
+              </a>
+              <span className="text-slate-700">|</span>
+              <p className="text-xs text-slate-500">
+                Kampala, Uganda &mdash; Building Excellence
+              </p>
+            </div>
           </div>
         </div>
       </footer>
@@ -1068,4 +1083,25 @@ export default function GraceHoldingsPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+/* ───────────────────────── ROUTER ────────────────────────── */
+
+export default function GraceHoldingsPage() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkHash = () => {
+      setIsAdmin(window.location.hash === "#admin");
+    };
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, []);
+
+  if (isAdmin) {
+    return <AdminPanel />;
+  }
+
+  return <GraceHoldingsWebsite />;
 }

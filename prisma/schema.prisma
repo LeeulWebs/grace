@@ -7,6 +7,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Admin users for the admin panel
+model AdminUser {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String
+  fullName  String
+  role      String    @default("admin")
+  isActive  Boolean   @default(true)
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("admin_users")
+}
+
+// Sessions for token-based authentication
+model Session {
+  id        Int       @id @default(autoincrement())
+  token     String    @unique
+  userId    Int
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@map("sessions")
+}
+
 // Contact form submissions from the website
 model ContactSubmission {
   id        Int      @id @default(autoincrement())
@@ -31,6 +58,34 @@ model Subscriber {
   updatedAt DateTime @updatedAt
 
   @@map("subscribers")
+}
+
+// Service categories with services stored as JSON
+model ServiceCategory {
+  id          Int      @id @default(autoincrement())
+  name        String
+  icon        String
+  color       String
+  lightColor  String
+  borderColor String
+  services    String   @default("[]")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("service_categories")
+}
+
+// Site-wide settings (key-value store)
+model SiteSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
 }
 
 // Projects portfolio
