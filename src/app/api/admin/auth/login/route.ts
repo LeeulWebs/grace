@@ -1,60 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hashPassword, generateToken } from "@/lib/admin-auth";
-import { execSync } from "child_process";
-import crypto from "crypto";
-
-let isInitializing = false;
-let initPromise: Promise<void> | null = null;
-
-async function ensureDbReady() {
-  if (isInitializing && initPromise) {
-    await initPromise;
-    return;
-  }
-  if (!isInitializing) {
-    isInitializing = true;
-    initPromise = (async () => {
-      try {
-        // Try a simple query to see if tables exist
-        await db.adminUser.count();
-      } catch {
-        console.log("[auth] Database tables missing. Initializing...");
-        try {
-          execSync("npx prisma db push --skip-generate 2>&1", {
-            cwd: process.cwd(),
-            stdio: "pipe",
-            timeout: 60000,
-          });
-          console.log("[auth] Schema pushed.");
-        } catch (e) {
-          console.error("[auth] Schema push failed:", e);
-        }
-      }
-      // Check if admin user exists
-      try {
-        const count = await db.adminUser.count();
-        if (count === 0) {
-          const hash = crypto.createHash("sha256").update("user").digest("hex");
-          await db.adminUser.create({
-            data: { username: "user", password: hash, fullName: "Admin User", role: "admin" },
-          });
-          console.log("[auth] Default admin user created.");
-        }
-      } catch (e) {
-        console.error("[auth] Seed failed:", e);
-      }
-      isInitializing = false;
-    })();
-    await initPromise;
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
-    // Ensure database is ready before anything
-    await ensureDbReady();
-
     const body = await request.json();
     const { username, password } = body;
 
@@ -111,6 +60,20 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Login error:", error);
+
+    // If the error is about missing tables, hint the caller
+    const msg = (error as Error).message || "";
+    if (
+      msg.includes("no such table") ||
+      msg.includes("sqlite3") ||
+      msg.includes("SQLITE_CANTOPEN")
+    ) {
+      return NextResponse.json(
+        { error: "Database not initialized. Run setup first." },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Something went wrong. Please try again later." },
       { status: 500 }

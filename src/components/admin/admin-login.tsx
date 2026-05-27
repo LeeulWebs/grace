@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Lock, User, AlertTriangle, RefreshCw } from "lucide-react";
+import { Loader2, Lock, User, AlertTriangle, RefreshCw, CheckCircle } from "lucide-react";
 import Image from "next/image";
 
 interface AdminLoginProps {
@@ -20,6 +20,8 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   const [loading, setLoading] = useState(false);
   const [setupMode, setSetupMode] = useState(false);
   const [setupMessage, setSetupMessage] = useState("");
+  const [setupSuccess, setSetupSuccess] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,6 +29,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
     setLoading(true);
     setSetupMode(false);
     setSetupMessage("");
+    setSetupSuccess(false);
 
     try {
       const res = await fetch("/api/admin/auth/login", {
@@ -44,10 +47,10 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
           description: "Successfully logged in.",
         });
         onLogin(data.token);
-      } else if (res.status === 500) {
-        // Database may not be initialized - show setup option
+      } else if (res.status === 503 || (res.status === 500 && data.error?.includes("not initialized"))) {
+        // Database not initialized - show setup option
         setSetupMode(true);
-        setSetupMessage(data.error || "The database may not be initialized yet.");
+        setSetupMessage(data.error || "The database has not been initialized yet.");
       } else {
         toast({
           title: "Login Failed",
@@ -67,30 +70,55 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   };
 
   const handleSetup = async () => {
+    setSettingUp(true);
     setSetupMessage("Initializing database...");
+    setSetupSuccess(false);
+
     try {
-      const res = await fetch("/api/admin/auth/login", {
+      const res = await fetch("/api/admin/setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: "user", password: "user" }),
       });
 
       const data = await res.json();
 
-      if (res.ok && data.token) {
-        setSetupMode(false);
-        setSetupMessage("");
-        localStorage.setItem("admin_token", data.token);
+      if (res.ok && data.success) {
+        setSetupSuccess(true);
+        setSetupMessage("Database initialized! You can now log in.");
+
+        // Auto-login after successful setup
+        try {
+          const loginRes = await fetch("/api/admin/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: "user", password: "user" }),
+          });
+
+          const loginData = await loginRes.json();
+          if (loginRes.ok && loginData.token) {
+            localStorage.setItem("admin_token", loginData.token);
+            toast({
+              title: "Setup Complete!",
+              description: "Database initialized and logged in.",
+            });
+            setSetupMode(false);
+            onLogin(loginData.token);
+            return;
+          }
+        } catch {
+          // Login after setup failed, but setup succeeded - user can try manually
+        }
+
         toast({
-          title: "Setup Complete!",
-          description: "Database initialized and logged in.",
+          title: "Setup Complete",
+          description: "Database initialized. Please log in with username 'user' and password 'user'.",
         });
-        onLogin(data.token);
       } else {
-        setSetupMessage(data.error || "Setup failed. Try running: bun run setup");
+        setSetupMessage(data.error || "Setup failed. Please run 'bun run setup' in the terminal.");
       }
     } catch {
       setSetupMessage("Connection error. Make sure the server is running.");
+    } finally {
+      setSettingUp(false);
     }
   };
 
@@ -189,24 +217,35 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                   className="rounded-lg border border-amber-200 bg-amber-50 p-4"
                 >
                   <div className="flex items-start gap-3">
-                    <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                    {setupSuccess ? (
+                      <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-500" />
+                    ) : (
+                      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
+                    )}
                     <div className="flex-1">
                       <p className="text-sm font-medium text-amber-800">
-                        Database Not Ready
+                        {setupSuccess ? "Setup Successful" : "Database Not Ready"}
                       </p>
                       <p className="mt-1 text-xs text-amber-600">
                         {setupMessage || "Click below to auto-initialize the database and login."}
                       </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-3 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
-                        onClick={handleSetup}
-                      >
-                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                        Initialize & Login
-                      </Button>
+                      {!setupSuccess && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          onClick={handleSetup}
+                          disabled={settingUp}
+                        >
+                          {settingUp ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Initialize & Login
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
